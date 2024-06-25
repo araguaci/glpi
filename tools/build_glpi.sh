@@ -7,7 +7,7 @@
 #
 # http://glpi-project.org
 #
-# @copyright 2015-2023 Teclib' and contributors.
+# @copyright 2015-2024 Teclib' and contributors.
 # @copyright 2003-2014 by the INDEPNET Development Team.
 # @licence   https://www.gnu.org/licenses/gpl-3.0.html
 #
@@ -76,6 +76,7 @@ find $WORKING_DIR -depth \( -iname ".*" ! -iname ".htaccess" \) -exec rm -rf {} 
 dev_nodes=(
     "composer.json"
     "composer.lock"
+    "docker-compose.yaml"
     "ISSUE_TEMPLATE.md"
     "locales/glpi.pot"
     "node_modules"
@@ -87,10 +88,6 @@ dev_nodes=(
     "tests"
     "tools"
     "vendor/bin"
-    "vendor/blueimp/jquery-file-upload/cors"
-    "vendor/blueimp/jquery-file-upload/test"
-    "vendor/blueimp/jquery-file-upload/wdio"
-    "vendor/blueimp/jquery-file-upload/index.html"
     "vendor/donatj/phpuseragentparser/.helpers"
     "vendor/donatj/phpuseragentparser/bin"
     "vendor/donatj/phpuseragentparser/tests"

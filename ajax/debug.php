@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2023 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -43,14 +43,18 @@ if ($_SESSION['glpi_use_mode'] !== Session::DEBUG_MODE) {
     die();
 }
 
-// No need to save session data. Cannot use Session::writeClose because it doesn't do anything in debug mode
-session_write_close();
 \Glpi\Debug\Profiler::getInstance()->disable();
 
 if (isset($_GET['ajax_id'])) {
     // Get debug data for a specific ajax call
     $ajax_id = $_GET['ajax_id'];
-    $profile = \Glpi\Debug\Profile::load($ajax_id);
+    $profile = \Glpi\Debug\Profile::pull($ajax_id);
+
+    // Close session ASAP to not block other requests.
+    // DO NOT do it before call to `\Glpi\Debug\Profile::pull()`,
+    // as we have to delete profile from `$_SESSION` during the pull operation.
+    session_write_close();
+
     if ($profile) {
         $data = $profile->getDebugInfo();
         if ($data) {

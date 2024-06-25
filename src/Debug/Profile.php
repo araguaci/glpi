@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2023 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -78,7 +78,7 @@ final class Profile
         return self::$current;
     }
 
-    public static function load(string $id, bool $delete = true): ?self
+    public static function pull(string $id): ?self
     {
         if (!isset($_SESSION['debug_profiles'][$id])) {
             return null;
@@ -90,9 +90,8 @@ final class Profile
             $profile->is_readonly = true;
             $profile->debug_info = $profile_data;
 
-            if ($delete) {
-                unset($_SESSION['debug_profiles'][$id]);
-            }
+            unset($_SESSION['debug_profiles'][$id]);
+
             return $profile;
         } catch (\Throwable $e) {
             return null;

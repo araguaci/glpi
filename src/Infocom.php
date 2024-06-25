@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2023 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -69,6 +69,7 @@ class Infocom extends CommonDBChild
      **/
     public static function canApplyOn($item)
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
        // All devices are subjects to infocom !
@@ -98,6 +99,7 @@ class Infocom extends CommonDBChild
      **/
     public static function getItemtypesThatCanHave()
     {
+        /** @var array $CFG_GLPI */
         global $CFG_GLPI;
 
         $types = array_merge(
@@ -285,8 +287,8 @@ class Infocom extends CommonDBChild
     /**
      * Fill, if necessary, automatically some dates when status changes
      *
-     * @param item          CommonDBTM object: the item whose status have changed
-     * @param action_add    true if object is added, false if updated (true by default)
+     * @param CommonDBTM $item          CommonDBTM object: the item whose status have changed
+     * @param boolean $action_add    true if object is added, false if updated (true by default)
      *
      * @return void
      **/
@@ -333,10 +335,10 @@ class Infocom extends CommonDBChild
     /**
      * Automatically manage copying one date to another is necessary
      *
-     * @param infocoms   array of item's infocom to modify
-     * @param field            the date to modify (default '')
-     * @param action           the action to peform (copy from another date) (default 0)
-     * @param params     array of additional parameters needed to perform the task
+     * @param array $infocoms   array of item's infocom to modify
+     * @param string $field            the date to modify (default '')
+     * @param integer $action           the action to peform (copy from another date) (default 0)
+     * @param array $params     array of additional parameters needed to perform the task
      *
      * @return void
      **/
@@ -483,7 +485,11 @@ class Infocom extends CommonDBChild
      **/
     public static function cronInfocom($task = null)
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         if (!$CFG_GLPI["use_notifications"]) {
             return 0;
@@ -762,7 +768,11 @@ class Infocom extends CommonDBChild
      **/
     public static function showDisplayLink($itemtype, $device_id)
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         if (
             !Session::haveRight(self::$rightname, READ)
@@ -1671,7 +1681,8 @@ class Infocom extends CommonDBChild
             'table'              => $this->getTable(),
             'field'              => 'itemtype',
             'name'               => _n('Type', 'Types', 1),
-            'datatype'           => 'itemtype',
+            'datatype'           => 'itemtypename',
+            'itemtype_list'      => 'infocom_types',
             'massiveaction'      => false
         ];
 
@@ -1768,14 +1779,14 @@ class Infocom extends CommonDBChild
         $timestamp = strtotime("$from+$addwarranty month -$deletenotice month");
 
         if ($auto_renew && $addwarranty > 0) {
-            while ($timestamp < time()) {
+            while ($timestamp < strtotime($_SESSION['glpi_currenttime'])) {
                 $datetime = new DateTime();
                 $datetime->setTimestamp($timestamp);
                 $timestamp = strtotime($datetime->format("Y-m-d H:i:s") . "+$addwarranty month");
             }
         }
 
-        if ($color && ($timestamp < time())) {
+        if ($color && ($timestamp < strtotime($_SESSION['glpi_currenttime']))) {
             return "<span class='red'>" . Html::convDate(date("Y-m-d", $timestamp)) . "</span>";
         }
         return Html::convDate(date("Y-m-d", $timestamp));
@@ -1785,7 +1796,7 @@ class Infocom extends CommonDBChild
     public static function getMassiveActionsForItemtype(
         array &$actions,
         $itemtype,
-        $is_deleted = 0,
+        $is_deleted = false,
         CommonDBTM $checkitem = null
     ) {
 
@@ -1880,6 +1891,7 @@ class Infocom extends CommonDBChild
      */
     public static function getTypes($where)
     {
+        /** @var \DBmysql $DB */
         global $DB;
 
         $types_iterator = $DB->request([

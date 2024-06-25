@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2023 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -35,10 +35,14 @@
 
 namespace tests\units;
 
+use Change;
 use CommonITILActor;
 use DbTestCase;
 use Glpi\Toolbox\Sanitizer;
 use ITILFollowup as CoreITILFollowup;
+use Problem;
+use QueryExpression;
+use Search;
 use Ticket;
 use Ticket_User;
 use User;
@@ -565,5 +569,139 @@ HTML
 
         $this->string($fup->fields['content'])->isEqualTo('test template2');
         $this->integer($fup->fields['is_private'])->isEqualTo(0);
+    }
+
+    /**
+     * Data provider for testIsParentAlreadyLoaded
+     *
+     * @return iterable
+     */
+    protected function testIsParentAlreadyLoadedProvider(): iterable
+    {
+        $this->login();
+        $entity = getItemByTypeName('Entity', '_test_root_entity', true);
+
+        // Obviously false, no data was loaded
+        $followup = new CoreITILFollowup();
+        yield [$followup, false];
+
+        // Create two tickets and a followup
+        $parent_1 = $this->createItem('Ticket', [
+            'entities_id' => $entity,
+            'name'        => 'Test ticket 1',
+            'content'     => '',
+        ]);
+        $parent_2 = $this->createItem('Ticket', [
+            'entities_id' => $entity,
+            'name'        => 'Test ticket 2',
+            'content'     => '',
+        ]);
+        $parent_3 = $this->createItem('Problem', [
+            'entities_id' => $entity,
+            'name'        => 'Test problem 1',
+            'content'     => '',
+        ]);
+        $followup = $this->createItem('ITILFollowup', [
+            'itemtype' => Ticket::getType(),
+            'items_id' => $parent_1->getID(),
+            'content'  => 'Test followup',
+        ]);
+
+        // Correct parent
+        $followup->setParentItem($parent_1);
+        yield [$followup, true];
+
+        // Invadid parent (wrong id)
+        $followup->setParentItem($parent_2);
+        yield [$followup, false];
+
+        // Invadid parent (wrong itemtype)
+        $followup->setParentItem($parent_3);
+        yield [$followup, false];
+    }
+
+    /**
+     * Tests for the isParentAlreadyLoaded method
+     *
+     * @dataProvider testIsParentAlreadyLoadedProvider
+     *
+     * @param CoreITILFollowup $followup
+     * @param bool $is_parent_loaded
+     *
+     * @return void
+     */
+    public function testIsParentAlreadyLoaded(
+        CoreITILFollowup $followup,
+        bool $is_parent_loaded
+    ): void {
+        $this->boolean(
+            $this->callPrivateMethod($followup, 'isParentAlreadyLoaded')
+        )->isEqualTo($is_parent_loaded);
+    }
+
+    public function testAddDefaultWhereTakeEntitiesIntoAccount(): void
+    {
+        $this->login();
+        $this->setEntity('_test_child_2', false);
+
+        // Add followups in an entity our user can see
+        $number_of_visible_followups = $this->countVisibleFollowupsForLoggedInUser();
+        $this->createFollowupInEntityForType('_test_child_2', Ticket::class);
+        $this->createFollowupInEntityForType('_test_child_2', Problem::class);
+        $this->createFollowupInEntityForType('_test_child_2', Change::class);
+        $this->integer(
+            $this->countVisibleFollowupsForLoggedInUser()
+        )->isEqualTo($number_of_visible_followups + 3); // 3 new followup found
+
+        // Add followups in a visible that our user can't see
+        $number_of_visible_followups = $this->countVisibleFollowupsForLoggedInUser();
+        $this->createFollowupInEntityForType('_test_root_entity', Ticket::class);
+        $this->createFollowupInEntityForType('_test_root_entity', Problem::class);
+        $this->createFollowupInEntityForType('_test_root_entity', Change::class);
+        $this->integer(
+            $this->countVisibleFollowupsForLoggedInUser()
+        )->isEqualTo($number_of_visible_followups); // No new followups found
+    }
+
+    private function countVisibleFollowupsForLoggedInUser(): int
+    {
+        /** @var \DBMysql $DB */
+        global $DB;
+
+        $already_linked_tables = [];
+        $results = $DB->request([
+            'COUNT' => 'number_of_followups',
+            'FROM' => CoreITILFollowup::getTable(),
+            'JOIN' => [
+                new QueryExpression(
+                    Search::addDefaultJoin(
+                        CoreITILFollowup::class,
+                        CoreITILFollowup::getTable(),
+                        $already_linked_tables
+                    )
+                )
+            ],
+            'WHERE' => new QueryExpression(
+                Search::addDefaultWhere(CoreITILFollowup::class)
+            ),
+        ]);
+
+        return (int) iterator_to_array($results)[0]['number_of_followups'];
+    }
+
+    private function createFollowupInEntityForType(
+        string $entity_name,
+        string $itemtype
+    ): void {
+        $itil = $this->createItem($itemtype, [
+            'entities_id' => getItemByTypeName('Entity', $entity_name, true),
+            'name'        => 'Test ticket',
+            'content'     => '',
+        ]);
+        $this->createItem(CoreITILFollowup::class, [
+            'itemtype' => $itemtype,
+            'items_id' => $itil->getID(),
+            'content'  => 'Test followup',
+        ]);
     }
 }

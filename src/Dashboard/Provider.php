@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2023 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -582,10 +582,10 @@ class Provider
             }
             $label = $username ?? $name;
             $data['labels'][] = $label;
-            array_unshift($data['series'][0]['data'], $allLate[$name]);
-            array_unshift($data['series'][1]['data'], $resolveLate[$name]);
-            array_unshift($data['series'][2]['data'], $ownLate[$name]);
-            array_unshift($data['series'][3]['data'], $onTime[$name]);
+            array_push($data['series'][0]['data'], $allLate[$name]);
+            array_push($data['series'][1]['data'], $resolveLate[$name]);
+            array_push($data['series'][2]['data'], $ownLate[$name]);
+            array_push($data['series'][3]['data'], $onTime[$name]);
         }
 
         if (count($data['series'][0]['data']) < 1) {
@@ -726,10 +726,10 @@ class Provider
             }
             $label = $username ?? $name;
             $data['labels'][] = $label;
-            array_unshift($data['series'][0]['data'], $allLate[$name]);
-            array_unshift($data['series'][1]['data'], $resolveLate[$name]);
-            array_unshift($data['series'][2]['data'], $ownLate[$name]);
-            array_unshift($data['series'][3]['data'], $onTime[$name]);
+            array_push($data['series'][0]['data'], $allLate[$name]);
+            array_push($data['series'][1]['data'], $resolveLate[$name]);
+            array_push($data['series'][2]['data'], $ownLate[$name]);
+            array_push($data['series'][3]['data'], $onTime[$name]);
         }
 
         if (count($data['series'][0]['data']) < 1) {
@@ -1671,8 +1671,9 @@ class Provider
             array_push($s_criteria, ...$filter_criteria);
         }
 
-        if ($default_criteria_on_empty === true && count($s_criteria) === 0) {
-            $s_criteria = Search::getDefaultCriteria();
+        $itemtype = getItemTypeForTable($table);
+        if (is_a($itemtype, CommonDBTM::class, true) && $default_criteria_on_empty === true && count($s_criteria) === 0) {
+            $s_criteria = Search::getDefaultCriteria($itemtype);
         }
 
         return ['criteria' => $s_criteria];

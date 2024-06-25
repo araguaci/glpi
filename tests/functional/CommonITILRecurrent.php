@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2023 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -35,7 +35,10 @@
 
 namespace tests\units;
 
+use Calendar;
+use CalendarSegment;
 use DbTestCase;
+use Session;
 
 /* Test for inc/commonitilrecurrent.class.php */
 
@@ -44,13 +47,15 @@ abstract class CommonITILRecurrent extends DbTestCase
     abstract protected function getChildClass();
 
     /**
-     * Data provider for self::testConvertTagToImage().
+     * Data provider for self::testComputeNextCreationDate().
      */
     protected function computeNextCreationDateProvider()
     {
-        $calendar    = new \Calendar();
+        $this->login();
+
+        $calendar    = new Calendar();
         $cal_holiday = new \Calendar_Holiday();
-        $cal_segment = new \CalendarSegment();
+        $cal_segment = new CalendarSegment();
         $holiday     = new \Holiday();
 
         $start_of_previous_month = date('Y-m-01 00:00:00', strtotime('-1 month'));
@@ -428,6 +433,61 @@ abstract class CommonITILRecurrent extends DbTestCase
             'expected_value' => date('Y-m-d H:00:00', $next_time),
         ];
 
+        // Create a calendar with 7 workings days
+        $full_calendar_9_to_10 =  $this->createItem(Calendar::class, [
+            'name' => $this->getChildClass() . ' full calendar 9 to 10',
+        ]);
+        for ($day = 0; $day <= 6; $day++) {
+            $this->createItem(CalendarSegment::class, [
+                'calendars_id' => $full_calendar_9_to_10->getID(),
+                'day'          => $day,
+                'begin'        => '09:00:00',
+                'end'          => '10:00:00'
+            ]);
+        }
+
+        // Daily ticket starting from the 27th of november
+        // We are on the 28th at 8 AM, which is BEFORE the start of the working
+        // day so the next creation date will be the 28th at 9 PM.
+        $data[] = [
+            'begin_date'     => "2023-11-27 08:00:00",
+            'end_date'       => null,
+            'periodicity'    => DAY_TIMESTAMP,
+            'create_before'  => 0,
+            'calendars_id'   => $full_calendar_9_to_10->getID(),
+            'expected_value' => "2023-11-28 09:00:00",
+            'messages'       => null,
+            'current_date'   => "2023-11-28 08:00:00",
+        ];
+
+        // Daily ticket starting from the 27th of november
+        // We are on the 28th at 8 AM, which is BEFORE the start of the working
+        // day so the next creation date will be the 28th at 9 PM.
+        $data[] = [
+            'begin_date'     => "2023-11-27 12:00:00", // Note: date is outside of calendar
+            'end_date'       => null,
+            'periodicity'    => DAY_TIMESTAMP,
+            'create_before'  => 0,
+            'calendars_id'   => $full_calendar_9_to_10->getID(),
+            'expected_value' => "2023-11-28 09:00:00",
+            'messages'       => null,
+            'current_date'   => "2023-11-28 08:00:00",
+        ];
+
+        // Daily ticket starting from the 27th of november
+        // We are on the 28th at 11 AM, which is AFTER the start of the working
+        // day so the next creation date will on the following day which is the 29th.
+        $data[] = [
+            'begin_date'     => "2023-11-27 12:00:00", // Note: date is outside of calendar
+            'end_date'       => null,
+            'periodicity'    => DAY_TIMESTAMP,
+            'create_before'  => 0,
+            'calendars_id'   => $full_calendar_9_to_10->getID(),
+            'expected_value' => "2023-11-29 09:00:00",
+            'messages'       => null,
+            'current_date'   => "2023-11-28 11:00:00",
+        ];
+
         return $data;
     }
 
@@ -439,6 +499,7 @@ abstract class CommonITILRecurrent extends DbTestCase
      * @param integer        $calendars_id
      * @param string         $expected_value
      * @param array          $messages
+     * @param string|null    $current_date             Override the current date
      *
      * @dataProvider computeNextCreationDateProvider
      */
@@ -449,8 +510,15 @@ abstract class CommonITILRecurrent extends DbTestCase
         $create_before,
         $calendars_id,
         $expected_value,
-        $messages = null
+        $messages = null,
+        $current_date = null
     ) {
+        // Handle dynamic date
+        $date_to_restore = null;
+        if (!is_null($current_date)) {
+            $date_to_restore = Session::getCurrentTime();
+            $_SESSION['glpi_currenttime'] = $current_date;
+        }
 
         $child_class = $this->getChildClass();
         $recurrent = new $child_class();
@@ -467,6 +535,10 @@ abstract class CommonITILRecurrent extends DbTestCase
             $this->hasNoSessionMessage(ERROR);
         } else {
             $this->hasSessionMessages(ERROR, $messages);
+        }
+
+        if (!is_null($date_to_restore)) {
+            $_SESSION['glpi_currenttime'] = $date_to_restore;
         }
     }
 
@@ -490,5 +562,116 @@ abstract class CommonITILRecurrent extends DbTestCase
         } while (!in_array($day, $working_days));
 
         return date($format, $time);
+    }
+
+    protected function createItemProvider()
+    {
+        $target_class = $this->getChildClass()::getConcreteClass();
+
+        $tech_id = getItemByTypeName(\User::class, 'tech', true);
+
+        // Create a 7d/7 24h/24 calendar
+        $calendar = $this->createItem(\Calendar::class, ['name' => 'testCreateItem calendar']);
+        for ($day = 0; $day <= 6; $day++) {
+            $this->createItem(
+                \CalendarSegment::class,
+                [
+                    'calendars_id' => $calendar->getID(),
+                    'day'          => $day,
+                    'begin'        => '00:00:00',
+                    'end'          => '24:00:00'
+                ]
+            );
+        }
+
+        // Status is computed to INCOMING as long as there is no predefined assignee
+        yield [
+            'predefined_fields' => [
+                '1'  => 'Test', // 1=name
+            ],
+            'expected_fields'   => [
+                'name'   => 'Test',
+                'status' => \CommonITILObject::INCOMING,
+            ],
+        ];
+
+        // Status is computed to ASSIGNED as long as there is a predefined assignee (except if ASSIGNED is not valid status)
+        yield [
+            'predefined_fields' => [
+                '5'  => $tech_id,
+            ],
+            'expected_fields'   => [
+                'status' => in_array(\CommonITILObject::ASSIGNED, array_keys($target_class::getAllStatusArray()))
+                    ? \CommonITILObject::ASSIGNED
+                    : \CommonITILObject::INCOMING,
+            ],
+        ];
+
+        // Predefined status is preserved
+        yield [
+            'predefined_fields' => [
+                '5'  => $tech_id,
+                '12' => \CommonITILObject::INCOMING, // 12=status
+            ],
+            'expected_fields'   => [
+                'status' => \CommonITILObject::INCOMING,
+            ],
+        ];
+    }
+
+    /**
+     * @param array $predefined_fields
+     * @param array $expected_fields
+     *
+     * @dataProvider createItemProvider
+     */
+    public function testCreateItem(array $predefined_fields, array $expected_fields)
+    {
+        $child_class = $this->getChildClass();
+        $template_class = $child_class::getTemplateClass();
+        $predefined_fields_class = $child_class::getPredefinedFieldsClass();
+
+        $calendar = getItemByTypeName(\Calendar::class, 'testCreateItem calendar');
+
+        // Create template and its predefined fields
+        $template = $this->createItem(
+            $template_class,
+            [
+                'name' => __METHOD__
+            ]
+        );
+        foreach ($predefined_fields as $num => $value) {
+            $this->createItem(
+                $predefined_fields_class,
+                [
+                    $template->getForeignKeyField() => $template->getID(),
+                    'num' => $num,
+                    'value' => $value,
+                ]
+            );
+        }
+
+        // Create item
+        $instance = $this->createItem(
+            $child_class,
+            [
+                'name'          => __METHOD__,
+                'begin_date'    => date('Y-m-d H:i:s', strtotime('-7 days')),
+                'end_date'      => null,
+                'periodicity'   => 3600,
+                'create_before' => 0,
+                'calendars_id'  => $calendar->getID(),
+                $template->getForeignKeyField() => $template->getID(),
+            ]
+        );
+        $created_item = null;
+        $this->boolean($instance->createItem($created_item))->isTrue();
+
+        // Validates created item fields
+        $this->object($created_item)->isInstanceOf(\CommonITILObject::class);
+        foreach ($expected_fields as $field_name => $field_value) {
+            $this->array($created_item->fields)->hasKey($field_name);
+            $this->variable($created_item->fields[$field_name])->isEqualTo($field_value);
+        }
     }
 }

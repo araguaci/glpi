@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2023 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -972,5 +972,210 @@ class Monitor extends AbstractInventoryAsset
         //monitor present in the inventory source is dynamic
         $monitors = $item_monitor->find(['itemtype' => 'Monitor', 'computers_id' => $computers_id, 'is_dynamic' => 1]);
         $this->integer(count($monitors))->isIdenticalTo(1);
+    }
+
+    public function testInventoryMonitorLog()
+    {
+        global $DB;
+
+        $monitor = new \Monitor();
+        $item_monitor = new \Computer_Item();
+
+        $xml_source = "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>
+<REQUEST>
+  <CONTENT>
+    <MONITORS>
+      <BASE64>AP///////wBNEEkUAAAAACAZAQSlHRF4Dt5Qo1RMmSYPUFQAAAABAQEBAQEBAQEBAQEBAQEBGjaAoHA4H0AwIDUAJqUQAAAYAAAAEAAAAAAAAAAAAAAAAAAAAAAA/gBESkNQNoBMUTEzM00xAAAAAAACQQMoABIAAAsBCiAgAGY=</BASE64>
+      <CAPTION>DJCP6</CAPTION>
+      <DESCRIPTION>32/2015</DESCRIPTION>
+      <MANUFACTURER>Sharp Corporation</MANUFACTURER>
+      <SERIAL>AFGHHDR0</SERIAL>
+    </MONITORS>
+    <MONITORS>
+      <BASE64>AP///////wAwrlBAAAAAAAAQAQOAIRV46gMVl1dSjCchUFQAAAABAQEBAQEBAQEBAQEBAQEBxxsAoFAgFzAwIDYAS88QAAAZehcAsVAgGTAwIDYAS88QAAAZAAAADwCBCjKBCigUAQBMo1gzAAAA/gBMVE4xNTRYMy1MMDIKAMI=</BASE64>
+      <DESCRIPTION>0/2006</DESCRIPTION>
+      <MANUFACTURER>Lenovo Group Limited</MANUFACTURER>
+      <NAME>Moniteur Plug-and-Play générique</NAME>
+      <SERIAL>AZ789</SERIAL>
+    </MONITORS>
+    <HARDWARE>
+      <NAME>pc002</NAME>
+    </HARDWARE>
+    <BIOS>
+      <SSN>ggheb7ne7</SSN>
+    </BIOS>
+    <VERSIONCLIENT>FusionInventory-Agent_v2.3.19</VERSIONCLIENT>
+  </CONTENT>
+  <DEVICEID>test-pc002</DEVICEID>
+  <QUERY>INVENTORY</QUERY>
+</REQUEST>";
+
+
+        //computer inventory with two monitors
+        $inventory = $this->doInventory($xml_source, true);
+
+        //check computer
+        $computers_id = $inventory->getItem()->fields['id'];
+        $this->integer($computers_id)->isGreaterThan(0);
+
+        //no log from first import (Computer or Monitor)
+        $nblogsnow = countElementsInTable(\Log::getTable());
+        $logs = $DB->request([
+            'FROM' => \Log::getTable(),
+            'LIMIT' => $nblogsnow,
+            'OFFSET' => $this->nblogs,
+            'WHERE' => [
+                'OR' => [
+                    'itemtype' => \Computer::class,
+                    'itemtype' => \Monitor::class,
+                ]
+            ]
+        ]);
+        $this->integer(count($logs))->isIdenticalTo(0);
+
+        //we have 2 monitor
+        $this->integer(count($monitor->find(['NOT' => ['name' => ['LIKE', '_test_%']]])))->isIdenticalTo(2);
+        //we have 2 monitor items linked to the computer
+        $this->integer(count($item_monitor->find(['itemtype' => 'Monitor', 'computers_id' => $computers_id])))->isIdenticalTo(2);
+        //we have 2 dynamic link
+        $this->integer(count($item_monitor->find(['itemtype' => 'Monitor', 'computers_id' => $computers_id, 'is_dynamic' => 1])))->isIdenticalTo(2);
+
+
+        $xml_source = "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>
+        <REQUEST>
+          <CONTENT>
+          <MONITORS>
+            <BASE64>AP///////wAwrlBAAAAAAAAQAQOAIRV46gMVl1dSjCchUFQAAAABAQEBAQEBAQEBAQEBAQEBxxsAoFAgFzAwIDYAS88QAAAZehcAsVAgGTAwIDYAS88QAAAZAAAADwCBCjKBCigUAQBMo1gzAAAA/gBMVE4xNTRYMy1MMDIKAMI=</BASE64>
+            <DESCRIPTION>0/2006</DESCRIPTION>
+            <MANUFACTURER>Lenovo Group Limited</MANUFACTURER>
+            <NAME>Moniteur Plug-and-Play générique</NAME>
+            <SERIAL>AZ789</SERIAL>
+          </MONITORS>
+            <HARDWARE>
+              <NAME>pc002</NAME>
+            </HARDWARE>
+            <BIOS>
+              <SSN>ggheb7ne7</SSN>
+            </BIOS>
+            <VERSIONCLIENT>FusionInventory-Agent_v2.3.19</VERSIONCLIENT>
+          </CONTENT>
+          <DEVICEID>test-pc002</DEVICEID>
+          <QUERY>INVENTORY</QUERY>
+        </REQUEST>";
+
+        //inventory again with only one monitor
+        $this->doInventory($xml_source, true);
+        //check for expected logs (one log for deleted relation)
+        $logs = $DB->request([
+            'FROM' => \Log::getTable(),
+            'WHERE' => [
+                'itemtype' => \Monitor::class,
+                'itemtype_link' => \Computer::class,
+                'linked_action' => \Log::HISTORY_DEL_RELATION
+            ]
+        ]);
+        $this->integer(count($logs))->isIdenticalTo(1);
+
+        //we have 2 monitor
+        $this->integer(count($monitor->find(['NOT' => ['name' => ['LIKE', '_test_%']]])))->isIdenticalTo(2);
+        //we have 1 monitor items linked to the computer
+        $this->integer(count($item_monitor->find(['itemtype' => 'Monitor', 'computers_id' => $computers_id])))->isIdenticalTo(1);
+        //we have 1 dynamic link
+        $this->integer(count($item_monitor->find(['itemtype' => 'Monitor', 'computers_id' => $computers_id, 'is_dynamic' => 1])))->isIdenticalTo(1);
+
+
+        $xml_source = "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>
+        <REQUEST>
+          <CONTENT>
+            <MONITORS>
+              <BASE64>AP///////wBNEEkUAAAAACAZAQSlHRF4Dt5Qo1RMmSYPUFQAAAABAQEBAQEBAQEBAQEBAQEBGjaAoHA4H0AwIDUAJqUQAAAYAAAAEAAAAAAAAAAAAAAAAAAAAAAA/gBESkNQNoBMUTEzM00xAAAAAAACQQMoABIAAAsBCiAgAGY=</BASE64>
+              <CAPTION>DJCP6</CAPTION>
+              <DESCRIPTION>32/2015</DESCRIPTION>
+              <MANUFACTURER>Sharp Corporation</MANUFACTURER>
+              <SERIAL>AFGHHDR0</SERIAL>
+            </MONITORS>
+            <MONITORS>
+              <BASE64>AP///////wAwrlBAAAAAAAAQAQOAIRV46gMVl1dSjCchUFQAAAABAQEBAQEBAQEBAQEBAQEBxxsAoFAgFzAwIDYAS88QAAAZehcAsVAgGTAwIDYAS88QAAAZAAAADwCBCjKBCigUAQBMo1gzAAAA/gBMVE4xNTRYMy1MMDIKAMI=</BASE64>
+              <DESCRIPTION>0/2006</DESCRIPTION>
+              <MANUFACTURER>Lenovo Group Limited</MANUFACTURER>
+              <NAME>Moniteur Plug-and-Play générique</NAME>
+              <SERIAL>AZ789</SERIAL>
+            </MONITORS>
+            <HARDWARE>
+              <NAME>pc002</NAME>
+            </HARDWARE>
+            <BIOS>
+              <SSN>ggheb7ne7</SSN>
+            </BIOS>
+            <VERSIONCLIENT>FusionInventory-Agent_v2.3.19</VERSIONCLIENT>
+          </CONTENT>
+          <DEVICEID>test-pc002</DEVICEID>
+          <QUERY>INVENTORY</QUERY>
+        </REQUEST>";
+
+        //computer inventory with one printer
+        $inventory = $this->doInventory($xml_source, true);
+        //check for expected logs (one log for deleted relation)
+        $logs = $DB->request([
+            'FROM' => \Log::getTable(),
+            'WHERE' => [
+                'itemtype' => \Monitor::class,
+                'itemtype_link' => \Computer::class,
+                'linked_action' => \Log::HISTORY_ADD_RELATION
+            ]
+        ]);
+        $this->integer(count($logs))->isIdenticalTo(1);
+
+        //we have 2 monitor
+        $this->integer(count($monitor->find(['NOT' => ['name' => ['LIKE', '_test_%']]])))->isIdenticalTo(2);
+        //we have 2 monitor items linked to the computer
+        $this->integer(count($item_monitor->find(['itemtype' => 'Monitor', 'computers_id' => $computers_id])))->isIdenticalTo(2);
+        //we have 2 dynamic link
+        $this->integer(count($item_monitor->find(['itemtype' => 'Monitor', 'computers_id' => $computers_id, 'is_dynamic' => 1])))->isIdenticalTo(2);
+    }
+
+    public function testInventoryRemoved()
+    {
+
+        global $DB;
+
+        $nb_monitors = countElementsInTable(\Monitor::getTable());
+        $json = json_decode(file_get_contents(self::INV_FIXTURES . 'computer_3.json'));
+
+        $inventory = $this->doInventory($json);
+
+        //check created agent
+        $agenttype = $DB->request(['FROM' => \AgentType::getTable(), 'WHERE' => ['name' => 'Core']])->current();
+        $agents = $DB->request(['FROM' => \Agent::getTable()]);
+        $this->integer(count($agents))->isIdenticalTo(1);
+        $agent = $agents->current();
+        $this->array($agent)
+            ->string['deviceid']->isIdenticalTo('LF014-2017-02-20-12-19-56')
+            ->string['name']->isIdenticalTo('LF014-2017-02-20-12-19-56')
+            ->string['version']->isIdenticalTo('2.3.19')
+            ->string['itemtype']->isIdenticalTo('Computer')
+            ->string['tag']->isIdenticalTo('000005')
+            ->integer['agenttypes_id']->isIdenticalTo($agenttype['id']);
+
+        //check created computer
+        $computers_id = $agent['items_id'];
+        $this->integer($computers_id)->isGreaterThan(0);
+        $computer = new \Computer();
+        $this->boolean($computer->getFromDB($computers_id))->isTrue();
+
+        //check created monitor
+        ++$nb_monitors;
+        $this->integer(countElementsInTable(\Monitor::getTable()))->isIdenticalTo($nb_monitors);
+        $this->integer(count($DB->request(['FROM' => \Computer_Item::getTable(), 'WHERE' => ['itemtype' => \Monitor::class, 'computers_id' => $computers_id]])))->isIdenticalTo(1);
+
+        //remove monitor
+        $json = json_decode(file_get_contents(self::INV_FIXTURES . 'computer_3.json'));
+        unset($json->content->monitors);
+        $this->doInventory($json);
+
+        //monitor is still present in database
+        $this->integer(countElementsInTable(\Monitor::getTable()))->isIdenticalTo($nb_monitors);
+        //link to monitor has been removed
+        $this->integer(count($DB->request(['FROM' => \Computer_Item::getTable(), 'WHERE' => ['itemtype' => \Monitor::class, 'computers_id' => $computers_id]])))->isIdenticalTo(0);
     }
 }

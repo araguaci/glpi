@@ -7,7 +7,7 @@
  *
  * http://glpi-project.org
  *
- * @copyright 2015-2023 Teclib' and contributors.
+ * @copyright 2015-2024 Teclib' and contributors.
  * @copyright 2003-2014 by the INDEPNET Development Team.
  * @licence   https://www.gnu.org/licenses/gpl-3.0.html
  *
@@ -124,7 +124,7 @@ class ReservationItem extends CommonDBChild
      * @param $itemtype   type of the item
      * @param $ID         ID of the item
      *
-     * @return true if succeed else false
+     * @return boolean true if succeed else false
      **/
     public function getFromDBbyItem($itemtype, $ID)
     {
@@ -275,7 +275,7 @@ class ReservationItem extends CommonDBChild
             'table'              => 'glpi_users',
             'field'              => 'name',
             'linkfield'          => 'users_id_tech',
-            'name'               => __('Technician in charge of the hardware'),
+            'name'               => __('Technician in charge'),
             'datatype'           => 'dropdown',
             'right'              => 'interface',
             'massiveaction'      => false
@@ -426,7 +426,11 @@ class ReservationItem extends CommonDBChild
 
     public static function showListSimple()
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         if (!Session::haveRightsOr(self::$rightname, [READ, self::RESERVEANITEM])) {
             return false;
@@ -512,7 +516,7 @@ class ReservationItem extends CommonDBChild
         ]);
 
         foreach ($iterator as $data) {
-            if (is_a($data['itemtype'], CommonDBTM::class, true) && $data['itemtype']::canView()) {
+            if (is_a($data['itemtype'], CommonDBTM::class, true)) {
                 $values[$data['itemtype']] = $data['itemtype']::getTypeName();
             }
         }
@@ -762,7 +766,11 @@ class ReservationItem extends CommonDBChild
      **/
     public static function cronReservation($task = null)
     {
-        global $DB, $CFG_GLPI;
+        /**
+         * @var array $CFG_GLPI
+         * @var \DBmysql $DB
+         */
+        global $CFG_GLPI, $DB;
 
         if (!$CFG_GLPI["use_notifications"]) {
             return 0;
@@ -1011,41 +1019,8 @@ class ReservationItem extends CommonDBChild
      */
     public static function ajaxDropdown(array $post)
     {
-        global $DB;
-
         if ($post['idtable'] && class_exists($post['idtable'])) {
-            $itemtype = $post['idtable'];
-            $itemtype_obj = new $itemtype();
-
-            $item_table = $itemtype::getTable();
-            $resi_table = ReservationItem::getTable();
-
-            $criteria = [
-                'SELECT' => [
-                    "$resi_table.id",
-                    "$item_table.name"
-                ],
-                'FROM' => $item_table,
-                'INNER JOIN' => [
-                    $resi_table => [
-                        'ON' => [
-                            $resi_table => 'items_id',
-                            $item_table => 'id',
-                            ['AND' => ["$resi_table.itemtype" => $itemtype]],
-                        ]
-                    ]
-                ],
-                'WHERE' => [
-                    "$resi_table.is_active"   => 1,
-                    "$item_table.is_deleted"  => 0,
-                ]
-            ];
-
-            if ($itemtype_obj->maybeTemplate()) {
-                $criteria['WHERE']["$item_table.is_template"] = 0;
-            }
-
-            $result = $DB->request($criteria);
+            $result = self::getAvailableItems($post['idtable']);
 
             if ($result->count() == 0) {
                  echo __('No reservable item!');
@@ -1061,5 +1036,89 @@ class ReservationItem extends CommonDBChild
                 Dropdown::showFromArray($post['name'], $items);
             }
         }
+    }
+
+    /**
+     * Get available items for a given itemtype
+     *
+     * @param string $itemtype
+     *
+     * @return DBmysqlIterator
+     */
+    public static function getAvailableItems(string $itemtype): DBmysqlIterator
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $reservation_table = ReservationItem::getTable();
+        $item_table = $itemtype::getTable();
+
+        $criteria = self::getAvailableItemsCriteria($itemtype);
+        $criteria['SELECT'] = [
+            "$reservation_table.id",
+            "$item_table.name"
+        ];
+
+        return $DB->request($criteria);
+    }
+
+    /**
+     * Get available items for a given itemtype
+     *
+     * @param string $itemtype
+     *
+     * @return int
+     */
+    public static function countAvailableItems(string $itemtype): int
+    {
+        /** @var \DBmysql $DB */
+        global $DB;
+
+        $criteria = self::getAvailableItemsCriteria($itemtype);
+        $criteria['COUNT'] = 'total';
+        $results = $DB->request($criteria);
+        return $results->current()['total'];
+    }
+
+    /**
+     * Get common criteria for getAvailableItems and countAvailableItems functions
+     *
+     * @param string $itemtype
+     *
+     * @return array
+     */
+    private static function getAvailableItemsCriteria(string $itemtype): array
+    {
+        $reservation_table = ReservationItem::getTable();
+        /** @var CommonDBTM $item */
+        $item = new $itemtype();
+        $item_table = $itemtype::getTable();
+
+        $criteria = [
+            'FROM' => $item_table,
+            'INNER JOIN' => [
+                $reservation_table => [
+                    'ON' => [
+                        $reservation_table => 'items_id',
+                        $item_table => 'id',
+                        ['AND' => ["$reservation_table.itemtype" => $itemtype]],
+                    ]
+                ]
+            ],
+            'WHERE' => [
+                "$reservation_table.is_active"   => 1,
+                "$item_table.is_deleted"  => 0,
+            ]
+        ];
+
+        if ($item->isEntityAssign()) {
+            $criteria['WHERE'] += getEntitiesRestrictCriteria($item_table, '', '', $item->maybeRecursive());
+        }
+
+        if ($item->maybeTemplate()) {
+            $criteria['WHERE']["$item_table.is_template"] = 0;
+        }
+
+        return $criteria;
     }
 }
